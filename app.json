@@ -1,0 +1,41 @@
+{
+  "name": "Railway DB Bot",
+  "description": "Telegram bot that auto-provisions free PostgreSQL, MySQL, MongoDB and Redis databases on Railway.app",
+  "keywords": ["telegram", "bot", "railway", "database", "postgresql", "mysql", "mongodb", "redis"],
+  "repository": "",
+  "logo": "",
+  "buildpacks": [
+    {
+      "url": "https://github.com/heroku/heroku-buildpack-python"
+    }
+  ],
+  "formation": {
+    "worker": {
+      "quantity": 1,
+      "size": "basic"
+    }
+  },
+  "env": {
+    "TELEGRAM_BOT_TOKEN": {
+      "description": "Your Telegram bot token from @BotFather",
+      "required": true
+    },
+    "ADMIN_ID": {
+      "description": "Your Telegram user ID (get it from @userinfobot)",
+      "required": true
+    },
+    "LOG_CHANNEL_ID": {
+      "description": "Telegram channel ID for live logs (optional, leave blank to disable)",
+      "required": false,
+      "value": ""
+    },
+    "COOLDOWN_SECS": {
+      "description": "Seconds between /getdb requests per user",
+      "required": false,
+      "value": "300"
+    }
+  },
+  "scripts": {
+    "postdeploy": "python3 -m playwright install chromium && python3 -m playwright install-deps chromium"
+  }
+}

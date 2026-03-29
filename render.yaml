@@ -1,0 +1,24 @@
+services:
+  - type: worker
+    name: railway-db-bot
+    env: python
+    buildCommand: |
+      pip install -r requirements.txt
+      python3 -m playwright install chromium
+      python3 -m playwright install-deps chromium
+    startCommand: python3 tgbot/tgbot/bot.py
+    envVars:
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: ADMIN_ID
+        sync: false
+      - key: LOG_CHANNEL_ID
+        sync: false
+      - key: COOLDOWN_SECS
+        value: "300"
+      - key: DB_PATH
+        value: /var/data/bot_data.db
+    disk:
+      name: bot-data
+      mountPath: /var/data
+      sizeGB: 1

@@ -1,0 +1,20 @@
+# ══════════════════════════════════════════════════════════════════════════════
+#  Railway DB Bot — Fly.io configuration
+#  This is a background worker — no [http_service] block needed.
+#  Deploy: fly launch --no-deploy  →  fly secrets set ...  →  fly deploy
+# ══════════════════════════════════════════════════════════════════════════════
+app = "railway-db-bot"
+primary_region = "sin"   # Singapore — change to: sin/nrt/bom/fra/iad/lax/syd
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  COOLDOWN_SECS = "300"
+
+# No [http_service] here — this is a pure background worker process.
+# Fly.io runs it as a long-running process without any public port or proxy.
+
+[[vm]]
+  size = "shared-cpu-1x"   # 256MB RAM — upgrade to shared-cpu-2x (512MB) recommended
+  memory = "512mb"

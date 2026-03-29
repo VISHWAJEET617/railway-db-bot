@@ -1,0 +1,36 @@
+version: "3.8"
+
+services:
+  bot:
+    build: .
+    image: railway-db-bot
+    container_name: railway-db-bot
+    restart: unless-stopped
+
+    # Bot needs --no-sandbox to run Chromium (already set in config)
+    # --ipc=host prevents Chromium shared memory crashes on low-RAM machines
+    ipc: host
+
+    environment:
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - ADMIN_ID=${ADMIN_ID}
+      - LOG_CHANNEL_ID=${LOG_CHANNEL_ID:-}
+      - COOLDOWN_SECS=${COOLDOWN_SECS:-300}
+      - DB_PATH=/data/bot_data.db
+
+    volumes:
+      # Persist SQLite database across container restarts
+      - bot_data:/data
+
+    env_file:
+      - .env
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  bot_data:
+    driver: local
