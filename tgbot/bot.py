@@ -13,6 +13,8 @@ from telegram.ext import (
     Application,
     CommandHandler,
     CallbackQueryHandler,
+    MessageHandler,
+    filters,
 )
 
 from tgbot.config import BOT_TOKEN, ADMIN_ID
@@ -24,6 +26,7 @@ from tgbot.handlers.getdb import (
     getdb_command,
     cancel_command,
     handle_callback,
+    handle_proxy_input,
 )
 from tgbot.handlers.mydb import (
     mydb, history, history_callback,
@@ -37,7 +40,7 @@ from tgbot.handlers.admin import (
 from tgbot.handlers.help_cmd import help_cmd
 from tgbot.handlers.ping import ping_command
 from tgbot.handlers.verify import build_verify_handler, verify_start, verify_cancel
-from tgbot.handlers.proxy import setproxy, checkproxy, proxy_callback
+from tgbot.handlers.proxy import setproxy, checkproxy, myproxy, proxy_callback
 
 logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s — %(message)s",
@@ -108,6 +111,7 @@ def main():
     app.add_handler(CommandHandler("ping",       ping_command))
     app.add_handler(CommandHandler("setproxy",   setproxy))
     app.add_handler(CommandHandler("checkproxy", checkproxy))
+    app.add_handler(CommandHandler("myproxy",    myproxy))
 
     # Verify conversation (must be added before generic CallbackQueryHandler)
     app.add_handler(build_verify_handler())
@@ -120,7 +124,8 @@ def main():
     app.add_handler(CallbackQueryHandler(mydb_noop_callback,            pattern="^mydb_noop$"))
     app.add_handler(CallbackQueryHandler(mydb_delete_callback,          pattern="^mydb_delete_"))
     app.add_handler(CallbackQueryHandler(mydb_confirm_delete_callback,  pattern="^mydb_confirm_delete_"))
-    app.add_handler(CallbackQueryHandler(proxy_callback,        pattern="^setproxy_help$|^recheck_proxy$"))
+    app.add_handler(CallbackQueryHandler(proxy_callback,        pattern="^setproxy_help$|^recheck_proxy$|^myproxy_recheck$|^myproxy_delete$"))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_proxy_input))
 
     async def ping_cb(update, context):
         from tgbot.handlers.ping import do_ping
@@ -157,6 +162,7 @@ def main():
             BotCommand("history",    "View last 5 databases"),
             BotCommand("setproxy",   "Set your proxy (required to get a DB)"),
             BotCommand("checkproxy", "Check your proxy anonymity and speed"),
+            BotCommand("myproxy",    "View or manage your stored proxy"),
             BotCommand("help",       "Help and documentation"),
         ])
         log.info("Bot commands registered")

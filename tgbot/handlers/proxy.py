@@ -1,7 +1,8 @@
 """
 Proxy management for the Railway DB bot.
-- /setproxy <proxy>   — store & verify a proxy (required for non-admins to get DBs)
-- /checkproxy [proxy] — check any proxy in detail without storing it
+- /setproxy <proxy>   — store & verify a proxy (only saved if pass + not transparent)
+- /checkproxy [proxy] — check any proxy; auto-deletes stored proxy if dead
+- /myproxy            — view, re-check, or delete stored proxy
 """
 import asyncio
 import logging
@@ -12,14 +13,14 @@ import requests
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 
-from tgbot.database import save_user_proxy, get_user_proxy, upsert_user
+from tgbot.database import save_user_proxy, get_user_proxy, upsert_user, delete_user_proxy
 from tgbot.config import ADMIN_ID
 
 log = logging.getLogger(__name__)
 
 HTTPBIN_URL   = "https://httpbin.org/get"
 IPIFY_URL     = "https://api.ipify.org?format=json"
-CHECK_TIMEOUT = 18  # seconds
+CHECK_TIMEOUT = 18
 
 
 # ── Proxy parsing ─────────────────────────────────────────────────────────────
@@ -33,7 +34,7 @@ def parse_proxy_str(proxy_str: str) -> dict | None:
       http://user:pass@ip:port
       socks5://ip:port
       socks5://user:pass@ip:port
-    Returns dict {server, username, password} for Playwright / requests.
+    Returns dict {server, username, password, scheme} for Playwright / requests.
     """
     s = proxy_str.strip()
 
@@ -53,7 +54,6 @@ def parse_proxy_str(proxy_str: str) -> dict | None:
             "scheme":   scheme,
         }
 
-    # host:port[:user:pass]
     parts = s.split(":")
     if len(parts) == 2:
         host, port_str = parts
@@ -117,7 +117,6 @@ def check_proxy(proxy_str: str) -> dict:
 
     req_proxies = _build_requests_proxies(parsed)
 
-    # Get our real IP (no proxy)
     real_ip = ""
     try:
         r = requests.get(IPIFY_URL, timeout=6)
@@ -147,7 +146,6 @@ def check_proxy(proxy_str: str) -> dict:
 
         proxy_ip = origin.split(",")[0].strip()
 
-        # Detect anonymity level
         proxy_header_names = {
             "X-Forwarded-For", "X-Forwarded", "X-Forwarded-Proto",
             "Forwarded", "Via", "Proxy-Connection", "Proxy-Authorization",
@@ -177,22 +175,22 @@ def check_proxy(proxy_str: str) -> dict:
             "error":            None,
         }
 
-    except requests.exceptions.ProxyError as e:
+    except requests.exceptions.ProxyError:
         return {
             "status":     "fail",
-            "error":      f"Proxy connection refused or auth failed",
+            "error":      "proxy_refused",
             "latency_ms": int((time.time() - start) * 1000),
         }
     except requests.exceptions.ConnectTimeout:
         return {
             "status":     "fail",
-            "error":      f"Connection timed out after {CHECK_TIMEOUT}s",
+            "error":      "timeout",
             "latency_ms": int((time.time() - start) * 1000),
         }
     except requests.exceptions.SSLError as e:
         return {
             "status":     "fail",
-            "error":      f"SSL error: {str(e)[:60]}",
+            "error":      f"ssl:{str(e)[:60]}",
             "latency_ms": int((time.time() - start) * 1000),
         }
     except Exception as e:
@@ -203,18 +201,53 @@ def check_proxy(proxy_str: str) -> dict:
         }
 
 
+# ── Specific error tips ───────────────────────────────────────────────────────
+
+def _specific_error_tip(result: dict) -> str:
+    """Return a specific, actionable error message based on the failure type."""
+    err = result.get("error", "") or ""
+    err_l = err.lower()
+
+    if err in ("proxy_refused",) or "refused" in err_l or "proxy connection" in err_l:
+        return (
+            "🔌 <b>Reason:</b> Proxy is offline or rejecting connections.\n"
+            "<i>The proxy server is not responding. Try a different proxy.</i>"
+        )
+    if err == "timeout" or "timed out" in err_l or "timeout" in err_l:
+        return (
+            f"⏱️ <b>Reason:</b> Connection timed out after {CHECK_TIMEOUT}s.\n"
+            "<i>The proxy is too slow or unreachable. Try a faster one.</i>"
+        )
+    if err.startswith("ssl:") or "ssl" in err_l:
+        return (
+            "🔒 <b>Reason:</b> SSL handshake failed.\n"
+            "<i>Try using an <code>http://</code> proxy instead of <code>https://</code>.</i>"
+        )
+    if "407" in err or "auth" in err_l or "username" in err_l or "password" in err_l:
+        return (
+            "🔑 <b>Reason:</b> Authentication failed.\n"
+            "<i>Your username or password is wrong. Check the proxy credentials.</i>"
+        )
+    if "http 4" in err_l or "http 5" in err_l or "returned http" in err_l:
+        return (
+            f"🌐 <b>Reason:</b> {err}\n"
+            "<i>The proxy returned an unexpected HTTP response.</i>"
+        )
+    if err:
+        return f"⚠️ <b>Reason:</b> {err[:100]}"
+    return "⚠️ <b>Reason:</b> Unknown error. Please try a different proxy."
+
+
 # ── Report formatter ──────────────────────────────────────────────────────────
 
 def _format_report(proxy_str: str, result: dict, stored: bool = False) -> str:
     status     = result.get("status", "fail")
     latency    = result.get("latency_ms", 0)
-    error      = result.get("error", "")
     anon_label = result.get("anonymity_label", "")
     proxy_ip   = result.get("proxy_ip", "")
     real_ip    = result.get("real_ip", "")
     exposed    = result.get("headers_exposed", [])
 
-    # Shorten proxy display
     short_proxy = proxy_str if len(proxy_str) <= 40 else proxy_str[:37] + "..."
 
     if status == "pass":
@@ -236,6 +269,7 @@ def _format_report(proxy_str: str, result: dict, stored: bool = False) -> str:
         if stored:
             lines += ["", "💾 <i>Proxy saved. You can now use /getdb!</i>"]
     else:
+        tip = _specific_error_tip(result)
         lines = [
             "🛡️ <b>Proxy Check Result</b>",
             "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
@@ -243,11 +277,12 @@ def _format_report(proxy_str: str, result: dict, stored: bool = False) -> str:
             f"❌ <b>Status:</b>     FAIL",
             f"📡 <b>Proxy:</b>      <code>{short_proxy}</code>",
             f"⏱️ <b>Time:</b>       {latency} ms",
-            f"⚠️ <b>Reason:</b>     {error}",
             "",
-            "Make sure the proxy is active and the format is correct.",
-            "Supported: <code>ip:port</code>  <code>ip:port:user:pass</code>",
-            "           <code>http://host:port</code>  <code>socks5://user:pass@host:port</code>",
+            tip,
+            "",
+            "Supported formats:",
+            "<code>ip:port</code>  <code>ip:port:user:pass</code>",
+            "<code>http://host:port</code>  <code>socks5://user:pass@host:port</code>",
         ]
 
     return "\n".join(lines)
@@ -286,16 +321,40 @@ async def setproxy(update: Update, context: ContextTypes.DEFAULT_TYPE):
     loop   = asyncio.get_event_loop()
     result = await loop.run_in_executor(None, check_proxy, proxy_str)
 
-    save_user_proxy(user.id, proxy_str, result)
-
-    report = _format_report(proxy_str, result, stored=True)
-
-    kb = None
-    if result["status"] == "pass":
+    if result["status"] == "pass" and result.get("anonymity") != "transparent":
+        save_user_proxy(user.id, proxy_str, result)
+        report = _format_report(proxy_str, result, stored=True)
         kb = InlineKeyboardMarkup([[
             InlineKeyboardButton("🚀 Get Database Now", callback_data="getdb_menu"),
         ]])
+
+    elif result.get("anonymity") == "transparent":
+        report = (
+            "🔴 <b>Transparent Proxy Rejected</b>\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"📡 <b>Proxy:</b> <code>{proxy_str[:40]}</code>\n\n"
+            "⚠️ This proxy leaks your real IP address.\n"
+            "Railway would detect and flag the account.\n\n"
+            "Please use an <b>Anonymous</b> or <b>Elite</b> proxy.\n\n"
+            "<i>Proxy not saved.</i>"
+        )
+        kb = InlineKeyboardMarkup([[
+            InlineKeyboardButton("🔄 Try Another Proxy", callback_data="setproxy_help"),
+        ]])
+
     else:
+        tip = _specific_error_tip(result)
+        latency = result.get("latency_ms", 0)
+        short_proxy = proxy_str if len(proxy_str) <= 40 else proxy_str[:37] + "..."
+        report = (
+            "🛡️ <b>Proxy Check Result</b>\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"❌ <b>Status:</b> FAIL\n"
+            f"📡 <b>Proxy:</b>  <code>{short_proxy}</code>\n"
+            f"⏱️ <b>Time:</b>   {latency} ms\n\n"
+            f"{tip}\n\n"
+            "<i>Proxy not saved. Fix the issue and try again.</i>"
+        )
         kb = InlineKeyboardMarkup([[
             InlineKeyboardButton("🔄 Try Another Proxy", callback_data="setproxy_help"),
         ]])
@@ -310,7 +369,6 @@ async def checkproxy(update: Update, context: ContextTypes.DEFAULT_TYPE):
     args = context.args
 
     if args:
-        # Check the given proxy without storing
         proxy_str = args[0].strip()
         if not parse_proxy_str(proxy_str):
             await update.message.reply_text(
@@ -325,17 +383,17 @@ async def checkproxy(update: Update, context: ContextTypes.DEFAULT_TYPE):
         result = await loop.run_in_executor(None, check_proxy, proxy_str)
         report = _format_report(proxy_str, result, stored=False)
 
-        kb = InlineKeyboardMarkup([[
-            InlineKeyboardButton(
-                "💾 Save & Use This Proxy",
-                callback_data=f"saveproxy_{proxy_str[:64]}",
-            ) if result["status"] == "pass" else
-            InlineKeyboardButton("🔄 Check Another", callback_data="setproxy_help"),
-        ]])
+        if result["status"] == "pass" and result.get("anonymity") != "transparent":
+            kb = InlineKeyboardMarkup([[
+                InlineKeyboardButton("💾 Save & Use This Proxy", callback_data=f"saveproxy_{proxy_str[:64]}"),
+            ]])
+        else:
+            kb = InlineKeyboardMarkup([[
+                InlineKeyboardButton("🔄 Check Another", callback_data="setproxy_help"),
+            ]])
         await checking.edit_text(report, parse_mode="HTML", reply_markup=kb)
 
     else:
-        # Check the stored proxy
         row = get_user_proxy(user.id)
         if not row:
             await update.message.reply_text(
@@ -353,22 +411,89 @@ async def checkproxy(update: Update, context: ContextTypes.DEFAULT_TYPE):
         loop   = asyncio.get_event_loop()
         result = await loop.run_in_executor(None, check_proxy, proxy_str)
 
-        save_user_proxy(user.id, proxy_str, result)
+        if result["status"] == "fail" or result.get("anonymity") == "transparent":
+            delete_user_proxy(user.id)
+            if result.get("anonymity") == "transparent":
+                msg = (
+                    "🔴 <b>Proxy is Transparent — removed.</b>\n\n"
+                    "This proxy leaks your real IP. It has been deleted from your account.\n"
+                    "Please set an Anonymous or Elite proxy with <code>/setproxy</code>."
+                )
+            else:
+                tip = _specific_error_tip(result)
+                msg = (
+                    f"❌ <b>Stored proxy is dead — removed.</b>\n\n"
+                    f"{tip}\n\n"
+                    f"Set a new one with <code>/setproxy ip:port</code>."
+                )
+            await checking.edit_text(msg, parse_mode="HTML")
+            return
 
+        save_user_proxy(user.id, proxy_str, result)
         report = _format_report(proxy_str, result, stored=False)
         last_checked = row.get("last_checked", "")
         report += f"\n\n<i>Last stored check: {last_checked[:16] if last_checked else 'N/A'}</i>"
 
         kb = InlineKeyboardMarkup([[
             InlineKeyboardButton("🔄 Check Again", callback_data="recheck_proxy"),
-            InlineKeyboardButton("🚀 Get DB", callback_data="getdb_menu"),
+            InlineKeyboardButton("🚀 Get DB",      callback_data="getdb_menu"),
         ]])
         await checking.edit_text(report, parse_mode="HTML", reply_markup=kb)
+
+
+async def myproxy(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    upsert_user(user.id, user.username, user.first_name)
+
+    row = get_user_proxy(user.id)
+    if not row:
+        await update.message.reply_text(
+            "📭 <b>No proxy stored.</b>\n\n"
+            "Use <code>/setproxy ip:port</code> to save one,\n"
+            "or use /getdb — the bot will ask you inline.",
+            parse_mode="HTML",
+        )
+        return
+
+    proxy_str    = row["proxy_str"]
+    is_valid     = row.get("is_valid", 0)
+    anonymity    = row.get("anonymity", "") or "unknown"
+    latency      = row.get("latency_ms", 0)
+    proxy_ip     = row.get("proxy_ip", "") or "N/A"
+    last_checked = row.get("last_checked", "")
+
+    status_icon  = "✅" if is_valid else "❌"
+    anon_icon    = "🟢" if anonymity == "elite" else ("🟡" if anonymity == "anonymous" else "🔴")
+    latency_icon = "🟢" if latency < 800 else ("🟡" if latency < 2000 else "🔴")
+    short_proxy  = proxy_str if len(proxy_str) <= 40 else proxy_str[:37] + "..."
+    last_chk     = last_checked[:16] if last_checked else "Never"
+
+    text = (
+        f"🛡️ <b>Your Stored Proxy</b>\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"📡 <b>Proxy:</b>        <code>{short_proxy}</code>\n"
+        f"{status_icon} <b>Status:</b>       {'Valid ✓' if is_valid else 'Invalid ✗'}\n"
+        f"🌐 <b>IP:</b>           <code>{proxy_ip}</code>\n"
+        f"{anon_icon} <b>Anonymity:</b>   {anonymity.capitalize()}\n"
+        f"{latency_icon} <b>Latency:</b>    {latency} ms\n"
+        f"🕐 <b>Last Checked:</b> {last_chk}"
+    )
+
+    kb = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("🔄 Re-check", callback_data="myproxy_recheck"),
+            InlineKeyboardButton("🗑️ Delete",   callback_data="myproxy_delete"),
+        ],
+        [InlineKeyboardButton("🚀 Get DB", callback_data="getdb_menu")],
+    ])
+
+    await update.message.reply_text(text, parse_mode="HTML", reply_markup=kb)
 
 
 async def proxy_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
+    user  = update.effective_user
 
     if query.data == "setproxy_help":
         await query.edit_message_text(
@@ -380,10 +505,9 @@ async def proxy_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
     elif query.data == "recheck_proxy":
-        user = update.effective_user
-        row  = get_user_proxy(user.id)
+        row = get_user_proxy(user.id)
         if not row:
-            await query.edit_message_text("No proxy stored.")
+            await query.edit_message_text("No proxy stored. Use /setproxy to add one.")
             return
         proxy_str = row["proxy_str"]
         await query.edit_message_text(
@@ -391,10 +515,78 @@ async def proxy_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         loop   = asyncio.get_event_loop()
         result = await loop.run_in_executor(None, check_proxy, proxy_str)
-        save_user_proxy(user.id, proxy_str, result)
-        report = _format_report(proxy_str, result, stored=False)
-        kb = InlineKeyboardMarkup([[
-            InlineKeyboardButton("🔄 Check Again", callback_data="recheck_proxy"),
-            InlineKeyboardButton("🚀 Get DB",       callback_data="getdb_menu"),
-        ]])
-        await query.edit_message_text(report, parse_mode="HTML", reply_markup=kb)
+
+        if result["status"] == "fail" or result.get("anonymity") == "transparent":
+            delete_user_proxy(user.id)
+            if result.get("anonymity") == "transparent":
+                msg = "🔴 Proxy is Transparent (removed). Use /setproxy to set a new one."
+            else:
+                tip = _specific_error_tip(result)
+                msg = f"❌ Proxy is dead (removed).\n\n{tip}\n\nUse /setproxy to set a new one."
+            await query.edit_message_text(msg, parse_mode="HTML")
+        else:
+            save_user_proxy(user.id, proxy_str, result)
+            report = _format_report(proxy_str, result, stored=False)
+            kb = InlineKeyboardMarkup([[
+                InlineKeyboardButton("🔄 Check Again", callback_data="recheck_proxy"),
+                InlineKeyboardButton("🚀 Get DB",      callback_data="getdb_menu"),
+            ]])
+            await query.edit_message_text(report, parse_mode="HTML", reply_markup=kb)
+
+    elif query.data == "myproxy_recheck":
+        row = get_user_proxy(user.id)
+        if not row:
+            await query.edit_message_text("No proxy stored. Use /setproxy to add one.")
+            return
+        proxy_str = row["proxy_str"]
+        await query.edit_message_text(
+            f"🔍 Re-checking <code>{proxy_str[:50]}</code>...", parse_mode="HTML"
+        )
+        loop   = asyncio.get_event_loop()
+        result = await loop.run_in_executor(None, check_proxy, proxy_str)
+
+        if result["status"] == "fail" or result.get("anonymity") == "transparent":
+            delete_user_proxy(user.id)
+            if result.get("anonymity") == "transparent":
+                msg = (
+                    "🔴 <b>Proxy is Transparent — removed.</b>\n\n"
+                    "This proxy leaks your real IP. Use /setproxy to set a new one."
+                )
+            else:
+                tip = _specific_error_tip(result)
+                msg = f"❌ <b>Proxy is dead — removed.</b>\n\n{tip}\n\nUse /setproxy to set a new one."
+            await query.edit_message_text(msg, parse_mode="HTML")
+        else:
+            save_user_proxy(user.id, proxy_str, result)
+            anon     = result.get("anonymity", "unknown")
+            anon_icon = "🟢" if anon == "elite" else "🟡"
+            latency  = result.get("latency_ms", 0)
+            lat_icon = "🟢" if latency < 800 else ("🟡" if latency < 2000 else "🔴")
+            proxy_ip = result.get("proxy_ip", "N/A")
+            short_proxy = proxy_str if len(proxy_str) <= 40 else proxy_str[:37] + "..."
+            text = (
+                f"🛡️ <b>Your Stored Proxy</b>\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                f"📡 <b>Proxy:</b>        <code>{short_proxy}</code>\n"
+                f"✅ <b>Status:</b>       Valid ✓\n"
+                f"🌐 <b>IP:</b>           <code>{proxy_ip}</code>\n"
+                f"{anon_icon} <b>Anonymity:</b>   {anon.capitalize()}\n"
+                f"{lat_icon} <b>Latency:</b>    {latency} ms"
+            )
+            kb = InlineKeyboardMarkup([
+                [
+                    InlineKeyboardButton("🔄 Re-check", callback_data="myproxy_recheck"),
+                    InlineKeyboardButton("🗑️ Delete",   callback_data="myproxy_delete"),
+                ],
+                [InlineKeyboardButton("🚀 Get DB", callback_data="getdb_menu")],
+            ])
+            await query.edit_message_text(text, parse_mode="HTML", reply_markup=kb)
+
+    elif query.data == "myproxy_delete":
+        delete_user_proxy(user.id)
+        await query.edit_message_text(
+            "🗑️ <b>Proxy deleted.</b>\n\n"
+            "Use <code>/setproxy ip:port</code> to set a new one,\n"
+            "or use /getdb — the bot will ask you inline.",
+            parse_mode="HTML",
+        )

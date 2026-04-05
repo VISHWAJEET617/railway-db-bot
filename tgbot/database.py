@@ -313,6 +313,13 @@ def get_user_proxy(user_id: int) -> dict | None:
     return dict(row) if row else None
 
 
+def delete_user_proxy(user_id: int):
+    conn = get_conn()
+    conn.execute("DELETE FROM user_proxies WHERE user_id=?", (user_id,))
+    conn.commit()
+    conn.close()
+
+
 def is_email_used(email: str) -> bool:
     """Return True if this email has already been submitted to Railway."""
     conn = get_conn()
