@@ -288,6 +288,50 @@ def _format_report(proxy_str: str, result: dict, stored: bool = False) -> str:
     return "\n".join(lines)
 
 
+# ── Proxy Guide ───────────────────────────────────────────────────────────────
+
+PROXY_GUIDE_TEXT = """
+📡 <b>Proxy Guide — How to Get &amp; Set a Proxy</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🔹 <b>Free Sources</b> <i>(no account needed)</i>
+• <a href="https://free-proxy-list.net">free-proxy-list.net</a>
+• <a href="https://spys.one">spys.one</a>
+• <a href="https://proxyscrape.com/free-proxy-list">proxyscrape.com</a>
+→ Copy <b>IP + Port</b> from the table
+→ Format: <code>/setproxy ip:port</code>
+
+🔹 <b>Paid Sources</b> <i>(better quality &amp; speed)</i>
+• <a href="https://webshare.io">webshare.io</a> — gives <code>ip:port:user:pass</code>
+• <a href="https://proxy-cheap.com">proxy-cheap.com</a> — gives SOCKS5 URL
+• <a href="https://922proxy.com">922proxy.com</a> — gives <code>ip:port:user:pass</code>
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📋 <b>All Supported Formats</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+<b>Basic</b> (free proxy sites):
+<code>/setproxy 1.2.3.4:8080</code>
+
+<b>With login</b> (paid proxies):
+<code>/setproxy 1.2.3.4:8080:myuser:mypass</code>
+
+<b>SOCKS5</b>:
+<code>/setproxy socks5://user:pass@1.2.3.4:1080</code>
+
+<b>HTTP URL</b>:
+<code>/setproxy http://user:pass@1.2.3.4:8080</code>
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+⚠️ <b>Remember</b>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+✅ <b>Elite &amp; Anonymous</b> → Saved &amp; accepted
+🔴 <b>Transparent</b> → Rejected (leaks your real IP to Railway)
+
+Use <code>/checkproxy ip:port</code> to test before saving.
+""".strip()
+
+
 # ── Command handlers ──────────────────────────────────────────────────────────
 
 USAGE_SETPROXY = (
@@ -297,6 +341,27 @@ USAGE_SETPROXY = (
     "<i>Example:</i> <code>/setproxy 123.45.67.89:8080</code>"
 )
 
+_KB_USAGE = InlineKeyboardMarkup([[
+    InlineKeyboardButton("📖 Proxy Guide", callback_data="show_proxy_guide"),
+]])
+
+_KB_FAIL = InlineKeyboardMarkup([
+    [
+        InlineKeyboardButton("🔄 Try Another Proxy", callback_data="setproxy_help"),
+        InlineKeyboardButton("📖 Proxy Guide",       callback_data="show_proxy_guide"),
+    ],
+])
+
+
+async def proxy_guide(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    upsert_user(user.id, user.username, user.first_name)
+    await update.message.reply_text(
+        PROXY_GUIDE_TEXT,
+        parse_mode="HTML",
+        disable_web_page_preview=True,
+    )
+
 
 async def setproxy(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
@@ -304,13 +369,17 @@ async def setproxy(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     args = context.args
     if not args:
-        await update.message.reply_text(USAGE_SETPROXY, parse_mode="HTML")
+        await update.message.reply_text(
+            USAGE_SETPROXY, parse_mode="HTML", reply_markup=_KB_USAGE
+        )
         return
 
     proxy_str = args[0].strip()
     if not parse_proxy_str(proxy_str):
         await update.message.reply_text(
-            f"❌ Invalid proxy format.\n\n{USAGE_SETPROXY}", parse_mode="HTML"
+            f"❌ Invalid proxy format.\n\n{USAGE_SETPROXY}",
+            parse_mode="HTML",
+            reply_markup=_KB_USAGE,
         )
         return
 
@@ -338,9 +407,7 @@ async def setproxy(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Please use an <b>Anonymous</b> or <b>Elite</b> proxy.\n\n"
             "<i>Proxy not saved.</i>"
         )
-        kb = InlineKeyboardMarkup([[
-            InlineKeyboardButton("🔄 Try Another Proxy", callback_data="setproxy_help"),
-        ]])
+        kb = _KB_FAIL
 
     else:
         tip = _specific_error_tip(result)
@@ -355,9 +422,7 @@ async def setproxy(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"{tip}\n\n"
             "<i>Proxy not saved. Fix the issue and try again.</i>"
         )
-        kb = InlineKeyboardMarkup([[
-            InlineKeyboardButton("🔄 Try Another Proxy", callback_data="setproxy_help"),
-        ]])
+        kb = _KB_FAIL
 
     await checking.edit_text(report, parse_mode="HTML", reply_markup=kb)
 
@@ -495,13 +560,28 @@ async def proxy_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     user  = update.effective_user
 
-    if query.data == "setproxy_help":
+    if query.data == "show_proxy_guide":
+        kb = InlineKeyboardMarkup([[
+            InlineKeyboardButton("◀️ Back", callback_data="setproxy_help"),
+        ]])
+        await query.edit_message_text(
+            PROXY_GUIDE_TEXT,
+            parse_mode="HTML",
+            disable_web_page_preview=True,
+            reply_markup=kb,
+        )
+
+    elif query.data == "setproxy_help":
+        kb = InlineKeyboardMarkup([[
+            InlineKeyboardButton("📖 Proxy Guide", callback_data="show_proxy_guide"),
+        ]])
         await query.edit_message_text(
             "⚙️ <b>How to set your proxy:</b>\n\n"
             "Send: <code>/setproxy ip:port</code>\n"
             "or: <code>/setproxy ip:port:user:pass</code>\n"
             "or: <code>/setproxy socks5://user:pass@ip:port</code>",
             parse_mode="HTML",
+            reply_markup=kb,
         )
 
     elif query.data == "recheck_proxy":
