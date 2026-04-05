@@ -219,28 +219,31 @@ _PROXY_PROMPT = (
 )
 
 
-async def _ask_proxy_inline(user, db_type: str, fresh: bool, edit_fn, send_fn, context):
+async def _ask_proxy_inline(user, db_type: str, fresh: bool, edit_fn, send_fn, context, is_admin: bool = False):
     """Edit/send the proxy prompt and set awaiting_proxy state."""
+    prefix = "newdb" if fresh else "db"
+    label  = DB_TYPES[db_type]["label"]
+
+    text = (
+        f"📡 <b>No proxy set.</b>\n\n"
+        f"Send your proxy now to proceed with <b>{label}</b>:\n\n"
+        f"<code>ip:port</code>\n"
+        f"<code>ip:port:user:pass</code>\n"
+        f"<code>socks5://user:pass@host:port</code>\n\n"
+        f"<i>Send /cancel to abort.</i>"
+    )
+
+    kb = None
+    if is_admin:
+        kb = InlineKeyboardMarkup([[
+            InlineKeyboardButton("⚡ Skip Proxy (Admin)", callback_data=f"skip_proxy_{prefix}_{db_type}"),
+        ]])
+
     if edit_fn:
-        await edit_fn(
-            f"📡 <b>No proxy set.</b>\n\n"
-            f"Send your proxy now to proceed with <b>{DB_TYPES[db_type]['label']}</b>:\n\n"
-            f"<code>ip:port</code>\n"
-            f"<code>ip:port:user:pass</code>\n"
-            f"<code>socks5://user:pass@host:port</code>\n\n"
-            f"<i>Send /cancel to abort.</i>",
-            parse_mode="HTML",
-        )
+        await edit_fn(text, parse_mode="HTML", reply_markup=kb)
     else:
-        await send_fn(
-            f"📡 <b>No proxy set.</b>\n\n"
-            f"Send your proxy now to proceed with <b>{DB_TYPES[db_type]['label']}</b>:\n\n"
-            f"<code>ip:port</code>\n"
-            f"<code>ip:port:user:pass</code>\n"
-            f"<code>socks5://user:pass@host:port</code>\n\n"
-            f"<i>Send /cancel to abort.</i>",
-            parse_mode="HTML",
-        )
+        await send_fn(text, parse_mode="HTML", reply_markup=kb)
+
     context.user_data["awaiting_proxy"] = {
         "db_type":  db_type,
         "fresh":    fresh,
@@ -403,7 +406,7 @@ async def _start_db_flow(
     # ── No proxy stored → ask inline ─────────────────────────────────────────
     proxy_row = get_user_proxy(user.id)
     if not proxy_row:
-        await _ask_proxy_inline(user, db_type, fresh, edit_msg, send_msg, context)
+        await _ask_proxy_inline(user, db_type, fresh, edit_msg, send_msg, context, is_admin=is_admin_user)
         return
 
     # ── Proxy stored → silent health check ───────────────────────────────────
@@ -427,6 +430,9 @@ async def _start_db_flow(
         delete_user_proxy(user.id)
         tip = _specific_error_tip(result)
         context.user_data["awaiting_proxy"] = {"db_type": db_type, "fresh": fresh, "attempts": 0}
+        admin_kb = InlineKeyboardMarkup([[
+            InlineKeyboardButton("⚡ Skip Proxy (Admin)", callback_data=f"skip_proxy_{prefix}_{db_type}"),
+        ]]) if is_admin_user else None
         await context.bot.edit_message_text(
             chat_id=chat_id,
             message_id=message_id,
@@ -438,6 +444,7 @@ async def _start_db_flow(
                 f"<i>Send /cancel to abort.</i>"
             ),
             parse_mode="HTML",
+            reply_markup=admin_kb,
         )
         return
 
@@ -445,6 +452,9 @@ async def _start_db_flow(
     if result.get("anonymity") == "transparent":
         delete_user_proxy(user.id)
         context.user_data["awaiting_proxy"] = {"db_type": db_type, "fresh": fresh, "attempts": 0}
+        admin_kb = InlineKeyboardMarkup([[
+            InlineKeyboardButton("⚡ Skip Proxy (Admin)", callback_data=f"skip_proxy_{prefix}_{db_type}"),
+        ]]) if is_admin_user else None
         await context.bot.edit_message_text(
             chat_id=chat_id,
             message_id=message_id,
@@ -455,6 +465,7 @@ async def _start_db_flow(
                 "<i>Send /cancel to abort.</i>"
             ),
             parse_mode="HTML",
+            reply_markup=admin_kb,
         )
         return
 
