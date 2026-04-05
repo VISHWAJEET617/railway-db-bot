@@ -13,6 +13,9 @@ __pycache__/
 .config/
 .local/
 .agents/
+.replit
+replit.nix
+replit.md
 
 # Attached assets (Replit chat uploads — not part of source code)
 attached_assets/
