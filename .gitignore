@@ -1,0 +1,25 @@
+# Environment
+.env
+
+# Runtime data
+data/
+__pycache__/
+*.py[cod]
+*.pyo
+.pythonlibs/
+
+# Replit internals
+.cache/
+.config/
+.local/
+.agents/
+
+# Attached assets (Replit chat uploads — not part of source code)
+attached_assets/
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
