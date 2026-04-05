@@ -343,7 +343,7 @@ LOG_CHANNEL_ID     = -1001234567890
 
 4. Click **Deploy**
 
-**Cost:** Hobby plan at $5/month — enough for a long-running bot worker. Railway no longer offers a free tier.
+**Free tier:** Trial plan includes $5 one-time credit — enough to test. For 24/7 uptime use the Hobby plan ($5/month with $5 usage credit included).
 
 ---
 
