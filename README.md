@@ -28,6 +28,7 @@ A fully automated Telegram bot that provisions **free PostgreSQL, MySQL, MongoDB
 - [🧩 Coolify (Self-Hosted PaaS)](#-coolify-self-hosted-paas)
 - [📡 Log Channel Setup](#-log-channel-setup)
 - [🤖 Bot Commands](#-bot-commands)
+- [🛡️ Proxy System](#️-proxy-system)
 - [⚙️ How the Smart Queue Works](#️-how-the-smart-queue-works)
 - [🛠️ Troubleshooting](#️-troubleshooting)
 - [📁 Project Structure](#-project-structure)
@@ -47,6 +48,12 @@ User sends `/getdb` in Telegram → bot opens a real Chromium browser in the bac
 - ✅ Smart queue — up to N parallel sessions based on your server's CPU & RAM (auto-detected)
 - ✅ CPU load monitoring — auto-holds new jobs when server is busy (>80% CPU)
 - ✅ Proxy support per user (mandatory — protects against Railway detection)
+- ✅ Proxy anonymity check — only Anonymous/Elite proxies accepted; Transparent rejected automatically
+- ✅ Inline proxy collection — if no proxy set, bot asks right inside the `/getdb` chat flow
+- ✅ Auto dead-proxy cleanup — dead or transparent proxies are auto-deleted on any health check
+- ✅ `/myproxy` — view, re-check, or delete your stored proxy with inline buttons
+- ✅ `/proxy_guide` — built-in guide with free/paid proxy sources and all format examples
+- ✅ Admin-only Skip Proxy — admins can bypass proxy requirement entirely with one tap
 - ✅ Telegram log channel — real-time notifications for every event
 - ✅ Admin panel — ban/unban, broadcast, stats
 - ✅ Runs on any Linux host with Python 3.10+ and Chromium
@@ -67,13 +74,15 @@ User sends `/getdb` in Telegram → bot opens a real Chromium browser in the bac
 2. It replies with your numeric ID — e.g. `123456789`
 3. This ID gets full admin access (no cooldowns, can ban/broadcast)
 
-### 3. A Proxy (Required for all users)
+### 3. A Proxy (Required for non-admin users)
 
-Every user must configure a proxy before creating a database. This prevents Railway.app from detecting automated signups.
+Every non-admin user must configure a proxy before creating a database. This prevents Railway.app from detecting automated signups.
 
-- Use any HTTP/HTTPS/SOCKS5 proxy
-- Set with `/setproxy ip:port` or `/setproxy ip:port:user:pass`
-- Admin can tap "⚡ Skip Proxy (Admin)" button to bypass
+- Supported formats: `ip:port` / `ip:port:user:pass` / `socks5://user:pass@host:port`
+- Only **Anonymous** or **Elite** proxies are accepted — Transparent proxies are rejected
+- Set with `/setproxy`, check with `/checkproxy`, manage with `/myproxy`
+- See `/proxy_guide` for recommended proxy sources
+- **Admin can tap "⚡ Skip Proxy (Admin)"** anywhere in the flow to bypass proxy entirely
 
 ---
 
@@ -629,18 +638,20 @@ The bot can send every event to a Telegram channel in real-time.
 
 | Command | Description |
 |---|---|
-| `/start` | Welcome message |
-| `/getdb` | Get a free database |
-| `/newdb` | Force fresh Railway account |
-| `/cancel` | Cancel active/queued request |
-| `/mydb` | View all your databases |
-| `/history` | View last 5 databases |
-| `/ping` | Check DB connection liveness |
-| `/verify <url>` | Verify any DB URL live |
-| `/setproxy ip:port` | Set your proxy |
-| `/setproxy ip:port:user:pass` | Set proxy with auth |
-| `/checkproxy` | Check proxy speed and anonymity |
-| `/help` | All commands |
+| `/start` | Welcome message + quick start button |
+| `/getdb` | Get a free database (inline proxy collection if none set) |
+| `/cancel` | Cancel active or queued request |
+| `/mydb` | View all your databases with pagination |
+| `/history` | View your last 5 databases |
+| `/ping` | Check if a DB connection is still alive |
+| `/verify <url>` | Verify any Railway DB URL in real-time |
+| `/setproxy ip:port` | Set proxy (no auth) |
+| `/setproxy ip:port:user:pass` | Set proxy with username & password |
+| `/setproxy socks5://user:pass@host:port` | Set SOCKS5 proxy |
+| `/checkproxy` | Check proxy anonymity level and latency |
+| `/myproxy` | View, re-check, or delete your stored proxy |
+| `/proxy_guide` | Guide: where to get proxies + all format examples |
+| `/help` | All commands and usage |
 
 ### Admin commands
 
@@ -652,6 +663,48 @@ The bot can send every event to a Telegram channel in real-time.
 | `/ban <user_id>` | Ban a user |
 | `/unban <user_id>` | Unban a user |
 | `/broadcast <msg>` | Message all users (HTML supported) |
+
+### Admin-only buttons (inline, no command needed)
+
+| Button | Where it appears | What it does |
+|---|---|---|
+| ⚡ Skip Proxy (Admin) | No proxy set | Skip proxy and provision DB directly |
+| ⚡ Skip Proxy (Admin) | Dead / transparent proxy detected | Skip and continue without proxy |
+| ⚡ Skip Proxy (Admin) | Healthy stored proxy panel | Skip stored proxy and proceed without |
+
+> These buttons are **invisible to regular users** — they only render for the configured `ADMIN_ID`.
+
+---
+
+## 🛡️ Proxy System
+
+The proxy system is the core protection layer that prevents Railway.app from detecting automated signups.
+
+### Anonymity Rules
+
+| Level | Accepted? | Reason |
+|---|---|---|
+| Elite (High) | ✅ Yes | Fully hidden — no proxy headers |
+| Anonymous | ✅ Yes | Hides real IP |
+| Transparent | ❌ No | Leaks real IP — auto-deleted |
+
+### How it works
+
+1. User sets proxy via `/setproxy` — bot immediately checks it
+2. If **Elite or Anonymous** → saved, user can run `/getdb`
+3. If **Transparent** → rejected with explanation, proxy NOT saved
+4. If **Dead** → error message with specific tip (refused / timeout / SSL / auth)
+5. Before every `/getdb` — stored proxy is silently re-checked:
+   - Dead → auto-deleted, user asked for a new one
+   - Transparent → auto-deleted, user asked for a new one
+   - Healthy → proceed (with option to use or replace)
+
+### Inline proxy collection
+
+If a user has no proxy and runs `/getdb`:
+- Bot does **not** redirect to a separate step — it asks for the proxy **right in the same message**
+- User pastes the proxy, bot checks it, and if it passes, DB provisioning starts immediately
+- `/cancel` aborts at any point
 
 ---
 
