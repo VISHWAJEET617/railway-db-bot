@@ -136,7 +136,7 @@ python3 -m playwright install chromium --with-deps
 mkdir -p data
 cp .env.example .env
 # edit .env, then:
-python3 tgbot/tgbot/bot.py
+python3 tgbot/bot.py
 ```
 
 ---
@@ -204,7 +204,7 @@ npm install pm2 -g
 
 # Start bot with PM2
 cd /opt/railway-db-bot
-pm2 start "python3 tgbot/tgbot/bot.py" --name railway-db-bot
+pm2 start "python3 tgbot/bot.py" --name railway-db-bot
 
 # Auto-start on server reboot
 pm2 startup
@@ -238,7 +238,7 @@ Type=simple
 User=root
 WorkingDirectory=/opt/railway-db-bot
 EnvironmentFile=/opt/railway-db-bot/.env
-ExecStart=/usr/bin/python3 tgbot/tgbot/bot.py
+ExecStart=/usr/bin/python3 tgbot/bot.py
 Restart=always
 RestartSec=10
 
@@ -763,7 +763,7 @@ This is intentional. Set a proxy first:
 
 - Railway can be slow — MongoDB especially (3–5 minutes is normal)
 - Check your proxy speed: `/checkproxy`
-- Try `/newdb` to force a fresh account
+- Try a different proxy with `/setproxy` and run `/getdb` again
 
 ### Chromium crashes silently (Docker)
 
@@ -810,36 +810,34 @@ git push heroku main
 ```
 railway-db-bot/
 ├── tgbot/
-│   └── tgbot/
-│       ├── bot.py              # Main entry point
-│       ├── config.py           # Env vars, Chromium auto-detect
-│       ├── database.py         # SQLite operations
-│       ├── queue_manager.py    # Smart CPU-aware queue (auto-scales)
-│       ├── railway_adapter.py  # Playwright browser automation
-│       ├── railway_api.py      # Railway GraphQL API client
-│       ├── mail_providers.py   # Disposable email (mail.tm)
-│       ├── log_channel.py      # Telegram log channel broadcaster
-│       ├── progress.py         # Live progress tracking
-│       └── handlers/
-│           ├── getdb.py        # /getdb and /newdb
-│           ├── mydb.py         # /mydb and /history
-│           ├── admin.py        # Admin panel
-│           ├── ping.py         # /ping
-│           ├── verify.py       # /verify
-│           ├── proxy.py        # /setproxy, /checkproxy
-│           ├── start.py        # /start
-│           └── help_cmd.py     # /help
-├── data/                       # SQLite DB (auto-created)
+│   ├── bot.py                  # Main entry point, handler registration
+│   ├── config.py               # Env vars, Chromium auto-detect, DB type defs
+│   ├── database.py             # SQLite schema + CRUD
+│   ├── queue_manager.py        # Smart CPU-aware async job queue
+│   ├── railway_adapter.py      # Playwright browser automation for Railway.app
+│   ├── railway_api.py          # Railway GraphQL API client
+│   ├── mail_providers.py       # Disposable email rotation (mail.tm)
+│   ├── log_channel.py          # Telegram log channel event broadcaster
+│   ├── progress.py             # Live in-message progress tracker
+│   └── handlers/
+│       ├── getdb.py            # /getdb — inline proxy collection + admin skip
+│       ├── mydb.py             # /mydb, /history — paginated DB list
+│       ├── admin.py            # /admin, /stats, /users, /ban, /unban, /broadcast
+│       ├── ping.py             # /ping — live DB connection check
+│       ├── verify.py           # /verify — Railway URL verifier (conversation)
+│       ├── proxy.py            # /setproxy, /checkproxy, /myproxy, /proxy_guide
+│       ├── start.py            # /start — welcome message
+│       └── help_cmd.py         # /help — full command reference
+├── data/                       # SQLite DB file (auto-created on first run)
 ├── requirements.txt            # Python dependencies
 ├── setup.sh                    # One-shot setup script
 ├── run.sh                      # Start script
-├── Dockerfile                  # Production Docker image
-├── docker-compose.yml          # Docker Compose config
-├── fly.toml                    # Fly.io deployment
-├── Procfile                    # Heroku worker
-├── railway.toml                # Railway deployment
-├── render.yaml                 # Render deployment
-├── app.json                    # Heroku app manifest
+├── Dockerfile                  # Production Docker image (Playwright base)
+├── docker-compose.yml          # Docker Compose with volume + ipc:host
+├── fly.toml                    # Fly.io background worker config
+├── Procfile                    # Heroku worker definition
+├── railway.toml                # Railway deployment config
+├── render.yaml                 # Render background worker + persistent disk
 ├── .env.example                # Environment variables template
 └── README.md                   # This file
 ```
