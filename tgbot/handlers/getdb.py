@@ -476,10 +476,13 @@ async def _start_db_flow(
     lat_icon  = "🟢" if latency < 800 else ("🟡" if latency < 2000 else "🔴")
     proxy_ip  = result.get("proxy_ip", "N/A")
 
-    kb = InlineKeyboardMarkup([
-        [InlineKeyboardButton("✅ Use Stored Proxy",      callback_data=f"use_stored_{prefix}_{db_type}")],
-        [InlineKeyboardButton("🔄 Enter a Different Proxy", callback_data=f"new_proxy_{prefix}_{db_type}")],
-    ])
+    rows = [
+        [InlineKeyboardButton("✅ Use Stored Proxy",         callback_data=f"use_stored_{prefix}_{db_type}")],
+        [InlineKeyboardButton("🔄 Enter a Different Proxy",  callback_data=f"new_proxy_{prefix}_{db_type}")],
+    ]
+    if is_admin_user:
+        rows.append([InlineKeyboardButton("⚡ Skip Proxy (Admin)", callback_data=f"skip_proxy_{prefix}_{db_type}")])
+    kb = InlineKeyboardMarkup(rows)
 
     await context.bot.edit_message_text(
         chat_id=chat_id,
