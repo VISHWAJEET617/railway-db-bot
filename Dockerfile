@@ -27,4 +27,4 @@ RUN mkdir -p data
 RUN chown -R pwuser:pwuser /app
 USER pwuser
 
-CMD ["python3", "tgbot/tgbot/bot.py"]
+CMD ["python3", "tgbot/bot.py"]

@@ -16,4 +16,4 @@ fi
 mkdir -p data
 
 echo "Starting Railway DB Bot..."
-exec python3 tgbot/tgbot/bot.py
+exec python3 tgbot/bot.py

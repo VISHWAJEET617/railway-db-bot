@@ -2,7 +2,7 @@
   "name": "Railway DB Bot",
   "description": "Telegram bot that auto-provisions free PostgreSQL, MySQL, MongoDB and Redis databases on Railway.app",
   "keywords": ["telegram", "bot", "railway", "database", "postgresql", "mysql", "mongodb", "redis"],
-  "repository": "",
+  "repository": "https://github.com/VISHWAJEET617/railway-db-bot",
   "logo": "",
   "buildpacks": [
     {
