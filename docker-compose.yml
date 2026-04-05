@@ -16,11 +16,11 @@ services:
       - ADMIN_ID=${ADMIN_ID}
       - LOG_CHANNEL_ID=${LOG_CHANNEL_ID:-}
       - COOLDOWN_SECS=${COOLDOWN_SECS:-300}
-      - DB_PATH=/data/bot_data.db
+      - DB_PATH=/app/data/bot_data.db
 
     volumes:
       # Persist SQLite database across container restarts
-      - bot_data:/data
+      - bot_data:/app/data
 
     env_file:
       - .env
