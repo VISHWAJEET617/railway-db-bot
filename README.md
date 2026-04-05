@@ -113,7 +113,7 @@ Copy `.env.example` to `.env` and fill in the values.
 
 ```bash
 # 1. Clone the repo
-git clone https://github.com/vishwajeetcoderr-dev/railway-db-bot.git
+git clone https://github.com/VISHWAJEET617/railway-db-bot.git
 cd railway-db-bot
 
 # 2. Run the one-shot setup script
@@ -170,7 +170,7 @@ python3 --version
 
 # 4. Clone the repo
 cd /opt
-git clone https://github.com/vishwajeetcoderr-dev/railway-db-bot.git
+git clone https://github.com/VISHWAJEET617/railway-db-bot.git
 cd railway-db-bot
 
 # 5. Run setup (installs Python packages + Chromium with all system deps)
