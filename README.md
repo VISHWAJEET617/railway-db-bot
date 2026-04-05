@@ -343,7 +343,7 @@ LOG_CHANNEL_ID     = -1001234567890
 
 4. Click **Deploy**
 
-**Free tier:** $5/month credit — enough for a long-running bot worker.
+**Cost:** Hobby plan at $5/month — enough for a long-running bot worker. Railway no longer offers a free tier.
 
 ---
 
@@ -477,7 +477,7 @@ LOG_CHANNEL_ID     = -1001234567890
 5. Under **Advanced** → set instance size to **Nano or larger** (512 MB+ RAM)
 6. Click **Deploy**
 
-**Important:** In Koyeb's service settings, set the `--ipc=host` equivalent — without it, Chromium may crash due to shared memory limits.
+**Important:** Koyeb's managed containers do **not** support `--ipc=host`. To reduce `/dev/shm` Chromium crashes, use at least the **Micro instance (1 GB RAM)** and set the `SHMEM_SIZE` workaround if available, or accept occasional restarts on lower-tier instances.
 
 ---
 
